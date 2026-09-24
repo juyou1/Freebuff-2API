@@ -6,9 +6,12 @@ COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src && echo 'fn main(){}' > src/main.rs && echo '' > src/lib.rs && \
     cargo build --release 2>/dev/null || true
 
-COPY src/ src/
-# 完整源码已就位：骨架缓存层由上一层 RUN 负责，这里直接全量构建（覆盖 lib+binary）
-RUN cargo build --release
+COPY . .
+# 骨架层 echo 写出的 src/* 时间戳晚于 COPY 进来的真实源码，cargo 会判 Fresh 跳过重编，
+# 导致空壳被带进最终镜像 —— 必须 touch 失效指纹。
+# 同时必须拷全上下文：src/extension.rs:12-33 与 src/models.rs:520 用 include_str!
+# 在编译期读 browser-extension/ 与 tests/fixtures/，只 COPY src/ 编不过。
+RUN find src browser-extension tests -type f -exec touch {} + && cargo build --release
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
